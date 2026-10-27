@@ -63,7 +63,7 @@ musa-compute-benchmarks/
 ### 2. 获取代码与编译
 ```bash
 # 克隆仓库
-git clone https://github.com/your-username/musa-compute-benchmarks.git
+git clone https://github.com/AI-Linzhongyishi/musa-compute-benchmarks.git
 cd musa-compute-benchmarks
 
 # 创建并进入构建目录
