@@ -1,33 +1,23 @@
-cmake_minimum_required(VERSION 3.16)
-project(musa_compute_benchmarks LANGUAGES C CXX)
+cmake_minimum_required(VERSION 3.18)
+project(musa_compute_benchmarks CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
-
 find_package(MUSA REQUIRED)
 
 include_directories(
-    ${CMAKE_CURRENT_SOURCE_DIR}/benchmarks
     ${MUSA_INCLUDE_DIRS}
+    ${CMAKE_CURRENT_SOURCE_DIR}/benchmarks
 )
 
-# V1 Baseline Benchmarks
-musa_add_executable(bandwidth_bench ${CMAKE_CURRENT_SOURCE_DIR}/benchmarks/bandwidth_bench.mu)
-musa_add_executable(compute_flops_bench ${CMAKE_CURRENT_SOURCE_DIR}/benchmarks/compute_flops_bench.mu)
-musa_add_executable(crypto_hash_bench ${CMAKE_CURRENT_SOURCE_DIR}/benchmarks/crypto_hash_bench.mu)
-
-# V2 Deeply-Optimized Benchmarks
-musa_add_executable(compute_flops_bench_v2 ${CMAKE_CURRENT_SOURCE_DIR}/benchmarks/compute_flops_bench_v2.mu)
-musa_add_executable(crypto_hash_bench_v2 ${CMAKE_CURRENT_SOURCE_DIR}/benchmarks/crypto_hash_bench_v2.mu)
-
-# Master build target
-add_custom_target(benchmarks ALL
-    DEPENDS 
-        build_bandwidth_bench 
-        build_compute_flops_bench 
-        build_crypto_hash_bench
-        build_compute_flops_bench_v2
-        build_crypto_hash_bench_v2
-)
+# Benchmark Targets
+musa_add_executable(bandwidth_bench benchmarks/bandwidth_bench.mu)
+musa_add_executable(compute_flops_bench benchmarks/compute_flops_bench.mu)
+musa_add_executable(compute_flops_bench_v2 benchmarks/compute_flops_bench_v2.mu)
+musa_add_executable(crypto_hash_bench benchmarks/crypto_hash_bench.mu)
+musa_add_executable(crypto_hash_bench_v2 benchmarks/crypto_hash_bench_v2.mu)
+musa_add_executable(crypto_hash_bench_v3 benchmarks/crypto_hash_bench_v3.mu)
+musa_add_executable(crypto_hash_bench_v4 benchmarks/crypto_hash_bench_v4.mu)
+musa_add_executable(crypto_hash_bench_v5 benchmarks/crypto_hash_bench_v5.mu)

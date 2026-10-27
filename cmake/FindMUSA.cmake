@@ -56,8 +56,8 @@ if(MUSA_FOUND)
         
         add_custom_command(
             OUTPUT ${OUTPUT_BIN}
-            COMMAND ${MUSA_MCC_EXECUTABLE} -I${MUSA_INCLUDE_DIR} -I${CMAKE_SOURCE_DIR}/benchmarks ${COMPAT_FLAGS} ${SOURCES} -o ${OUTPUT_BIN} -L${MUSA_LIB_DIR} -lmusart
-            DEPENDS ${SOURCES}
+            COMMAND ${MUSA_MCC_EXECUTABLE} -I${MUSA_INCLUDE_DIR} -I${CMAKE_SOURCE_DIR}/benchmarks ${COMPAT_FLAGS} ${CMAKE_CURRENT_SOURCE_DIR}/${SOURCES} -o ${OUTPUT_BIN} -L${MUSA_LIB_DIR} -lmusart
+            DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/${SOURCES}
             COMMENT "[MUSA] Compiling ${TARGET_NAME} for Moore Threads MTT S80..."
         )
         add_custom_target(build_${TARGET_NAME} ALL DEPENDS ${OUTPUT_BIN})

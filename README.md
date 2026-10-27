@@ -27,19 +27,42 @@
 | **FP32 浮点算力峰值** | **8.075 TFLOPS** (实测 3.35 Tera-ops) | 1.40 TFLOPS (官方理论峰值) | 23.70 TFLOPS | **5.77x P620 浮点算力** |
 | **SHA-256 并发哈希 (v1)**| **810.75 MH/s** (52.4万并发线程) | **442.60 MH/s** (Hashcat 模式 1400) | ~5,950 MH/s | **1.83x P620 纯哈希速率** |
 | **SHA-256 并发哈希 (v2)**| **873.92 MH/s** (104.8万并发线程) | - | - | **布尔化简 + 16字环形滚动窗口** |
+| **SHA-256 内建指令 (v3)**| **873.90 MH/s** (104.8万并发线程) | - | - | **编译器 `__builtin_rotateright32` 原语** |
+| **密码候选快路径 (v4)**| **931.87 MH/s (9.32 亿组/秒)** | - | - | **零项消除 + 常量折叠快路径 (+15.0%)** |
+| **双路指令并行 (v5)**  | **924.64 MH/s (9.25 亿组/秒)** | - | - | **2-Way ILP 算术流水线延迟隐藏** |
 
 ---
 
 ## 🚀 性能优化演进（Optimization Roadmap）
 
-### V2 深度优化核心特性：
+本项目针对摩尔线程「春晓」架构（32 个 SM、4096 个流处理器）进行了深度底层算子调优演进：
+
+### V1 基线版本（Generic MUSA Baseline）：
+- 采用通用 SHA-256 算法实现，每个线程计算单组消息。
+- 524,288 活跃线程并发，达到 **810.75 MH/s**（相对 Quadro P620 提升 **1.83 倍**）。
+
+### V2 寄存器与布尔优化（Circular Register Window & Boolean Reduction）：
 1. **布尔代数化简（Boolean Simplification）**：
    - 将标准选择函数 $Ch(x,y,z) = (x \land y) \oplus (\neg x \land z)$ 化简为等价的 $z \oplus (x \land (y \oplus z))$，底层 ALU 指令从 4 条降至 3 条；
    - 将多数函数 $Maj(x,y,z)$ 指令从 5 条降至 4 条，全流程 64 轮变换每哈希立省 64 条指令。
 2. **16 字环形滚动寄存器窗口（Circular Register Window）**：
    - 将原本静态展开的 `W[64]` 数组大幅压缩为 `w[16]`，通过位掩码 `w[i & 15]` 循环复用，消除了寄存器向显存溢出（Local Memory Spill）的延迟。
 3. **百万级并发调度扩展**：
-   - 将活跃 GPU 线程数从 524,288 翻倍提升至 **1,048,576**，充分填满 S80 32 个 SM 的硬件 CCB 队列。
+   - 活跃 GPU 线程数提升至 **1,048,576**，吞吐升至 **873.92 MH/s**。
+
+### V3 编译器原语（Hardware Intrinsics）：
+- 引入 LLVM Clang 底层循环右移原语 `__builtin_rotateright32`，保证编译器直接生成硬件单周期 `ROR` 指令。
+
+### V4 密码候选快路径（Zero-Term Elimination & Constant Folding）：
+1. **零项消去（Zero-term Elimination）**：
+   - 在真实字典与密码候选场景（如 12 字节以内口令），数据块第 4 至第 14 组字全部恒为 `0x00000000`。
+   - 剔除无意义的加法运算，每轮节省 1 条 32 位加法指令。
+2. **消息扩展常量折叠（Compile-time Constant Folding）**：
+   - 提前预计算轮次 16 至 26 的确定性常数项（如 `0x003c0000`、`0x11002000`），进一步裁减运算周期。
+   - **实测吞吐突破 931.87 MH/s（9.32 亿组密码/秒），较 v1 基线净增 15.0%**。
+
+### V5 双路指令级并行（Dual-ILP Latency Hiding）：
+- 探索单线程双密码候选交织（2-Way Interleaved Candidate Evaluation），利用无数据依赖的两组口令哈希指令填补流水线读后写（RAW Hazard）延迟，实测达到 **924.64 MH/s**。
 
 ---
 
@@ -47,67 +70,54 @@
 
 ```text
 musa-compute-benchmarks/
-├── CMakeLists.txt              # 根 CMake 构建配置文件
+├── CMakeLists.txt              # 根 CMake 构建配置文件 (集成 FindMUSA)
 ├── cmake/
-│   └── FindMUSA.cmake          # 现代化 MUSA SDK 查找模块与 musa_add_executable 宏
+│   └── FindMUSA.cmake          # 自研 MUSA 工具链与 mcc 编译器自动检测模块
 ├── benchmarks/
-│   ├── common.h                # 纳秒级高精度计时器与硬件参数探测器
-│   ├── bandwidth_bench.mu      # PCIe 4.0/5.0 与 323+ GB/s 显存压力带宽测试
-│   ├── compute_flops_bench.mu  # 4096 核心饱和 FMA 浮点 TFLOPS 测试 (v1)
-│   ├── compute_flops_bench_v2.mu # 零延迟流水线 FMA 浮点测试 (v2)
-│   ├── crypto_hash_bench.mu    # NIST SHA-256 哈希基准测试 (v1 Baseline)
-│   └── crypto_hash_bench_v2.mu # 布尔化简与环形寄存器 SHA-256 测试 (v2 Deeply-Optimized)
+│   ├── common.h                # 通用高精度计时器与 MUSA 设备信息诊断
+│   ├── bandwidth_bench.mu      # H2D / D2H / D2D 显存与 PCIe 吞吐基准测试
+│   ├── compute_flops_bench.mu  # FP32 纯浮点算力峰值基准测试 (v1)
+│   ├── compute_flops_bench_v2.mu # FP32 高密度 FMA 浮点压测 (v2)
+│   ├── crypto_hash_bench.mu    # SHA-256 并发哈希测试 (v1 基线)
+│   ├── crypto_hash_bench_v2.mu # SHA-256 环形寄存器布尔优化版 (v2)
+│   ├── crypto_hash_bench_v3.mu # SHA-256 编译器硬件原语版 (v3)
+│   ├── crypto_hash_bench_v4.mu # SHA-256 零项消去与常量折叠快路径 (v4)
+│   └── crypto_hash_bench_v5.mu # SHA-256 双路指令级并行流水线版 (v5)
 ├── scripts/
-│   └── run_benchmarks.sh       # 一键全自动化编译与多版本顺序评测脚本
-└── README.md                   # 项目工程说明文档
+│   └── run_benchmarks.sh       # 一键全套编译并执行基准测试脚本
+├── LICENSE                     # MIT 开源许可证
+└── README.md                   # 完整测试报告与中英文架构说明
 ```
 
 ---
 
-## ⚡ 快速上手与运行
+## ⚡ 快速编译与运行（Build & Run）
 
-### 1. 克隆代码与一键编译
+### 环境要求
+- 操作系统：Ubuntu 20.04 / 22.04 / 24.04 / 26.04 LTS
+- 硬件：摩尔线程 MTT S80（或其他 MUSA 架构 GPU）
+- 软件栈：MUSA SDK v4.2+ / v4.3+，CMake 3.18+，GCC 11+
+
+### 1. 编译全部基准测试项
 ```bash
 git clone https://github.com/AI-Linzhongyishi/musa-compute-benchmarks.git
 cd musa-compute-benchmarks
 
-mkdir build && cd build
+mkdir -p build && cd build
 cmake ..
 make -j$(nproc)
 ```
 
-### 2. 运行基准套件
+### 2. 运行单项或一键运行
 ```bash
-# 一键运行全部 V1 与 V2 评测：
+# 一键编译并运行全部套件
 sudo ./scripts/run_benchmarks.sh
 
-# 或单独执行特定测试：
-cd build
-sudo ./bandwidth_bench          # 显存与 PCIe 带宽实测
-sudo ./compute_flops_bench      # FP32 浮点算力 (8.07 TFLOPS)
-sudo ./crypto_hash_bench        # SHA-256 v1 (810 MH/s)
-sudo ./crypto_hash_bench_v2     # SHA-256 v2 (874 MH/s)
+# 或单独运行密码学极限快路径基准测试 (v4)
+sudo ./build/crypto_hash_bench_v4
 ```
 
 ---
 
-## 🧩 如何在你的项目中使用 `FindMUSA.cmake`？
-
-本项目开源提供的 `cmake/FindMUSA.cmake` 支持将摩尔线程 MUSA 工具链无缝集成进现代 CMake 工程：
-
-```cmake
-# 将 cmake 目录加入模块搜索路径
-list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
-
-# 探测并引入 MUSA
-find_package(MUSA REQUIRED)
-
-# 使用 musa_add_executable 宏一键编译 .mu 文件
-musa_add_executable(my_kernel_app src/my_kernel.mu)
-```
-
----
-
-## 📜 许可证 (License)
-
-本项目采用 [MIT 许可证](LICENSE) 开源，欢迎提交 Issue 与 PR 共同完善摩尔线程 MUSA 开发者生态！
+## 📄 许可证（License）
+本项目采用 [MIT License](LICENSE) 协议开源。欢迎全球开发者提交 Issue 与 PR 共同完善摩尔线程 MUSA 开源生态！
