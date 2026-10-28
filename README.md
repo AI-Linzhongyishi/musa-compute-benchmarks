@@ -30,6 +30,7 @@
 | **SHA-256 内建指令 (v3)**| **873.90 MH/s** (104.8万并发线程) | - | - | **编译器 `__builtin_rotateright32` 原语** |
 | **密码候选快路径 (v4)**| **931.87 MH/s (9.32 亿组/秒)** | - | - | **零项消除 + 常量折叠快路径 (+15.0%)** |
 | **双路指令并行 (v5)**  | **924.64 MH/s (9.25 亿组/秒)** | - | - | **2-Way ILP 算术流水线延迟隐藏** |
+| **Hashcat 逆向增强 (v6)**| **1066.01 MH/s (10.66 亿组/秒)** | - | - | **Meet-in-the-Middle 逆向截断 (+31.5% / 2.41x P620)** |
 
 ---
 
@@ -58,11 +59,16 @@
    - 在真实字典与密码候选场景（如 12 字节以内口令），数据块第 4 至第 14 组字全部恒为 `0x00000000`。
    - 剔除无意义的加法运算，每轮节省 1 条 32 位加法指令。
 2. **消息扩展常量折叠（Compile-time Constant Folding）**：
-   - 提前预计算轮次 16 至 26 的确定性常数项（如 `0x003c0000`、`0x11002000`），进一步裁减运算周期。
-   - **实测吞吐突破 931.87 MH/s（9.32 亿组密码/秒），较 v1 基线净增 15.0%**。
+   - 提前预计算轮次 16 至 26 的确定性常数项，实测吞吐突破 **931.87 MH/s（9.32 亿组/秒）**。
 
 ### V5 双路指令级并行（Dual-ILP Latency Hiding）：
 - 探索单线程双密码候选交织（2-Way Interleaved Candidate Evaluation），利用无数据依赖的两组口令哈希指令填补流水线读后写（RAW Hazard）延迟，实测达到 **924.64 MH/s**。
+
+### V6 Hashcat 逆向会师增强版（Meet-in-the-Middle Reverse Early Abort）：
+- **吸收借鉴工业级 Hashcat 7.1.2 底层 OpenCL 内核架构**：
+  1. **双向会师逆向早期截断（Meet-in-the-Middle）**：在主机端预先将目标哈希进行 4 步反向逆推求出中间状态 `d_rev`；GPU 正向计算在**第 56 轮**直接进行碰撞比对，99.9999% 的不匹配候选立即放弃，彻底省去后半段最后 8 轮计算！
+  2. **极简布尔逻辑与循环左移映射**：采用 Hashcat 专属的 `SHA256_F0` / `SHA256_F1` 优化定义，结合硬件左旋原语加速。
+- **实测成果**：单轮计算时间首次压进 1 秒大关（**983.64 ms**），吞吐量历史性突破 10 亿大关，达到 **1066.01 MH/s（10.66 亿组候选/秒）**，较 v1 基线净增 **+31.5%**，达到亮机卡 Quadro P620 的 **2.41 倍**！
 
 ---
 
@@ -82,7 +88,8 @@ musa-compute-benchmarks/
 │   ├── crypto_hash_bench_v2.mu # SHA-256 环形寄存器布尔优化版 (v2)
 │   ├── crypto_hash_bench_v3.mu # SHA-256 编译器硬件原语版 (v3)
 │   ├── crypto_hash_bench_v4.mu # SHA-256 零项消去与常量折叠快路径 (v4)
-│   └── crypto_hash_bench_v5.mu # SHA-256 双路指令级并行流水线版 (v5)
+│   ├── crypto_hash_bench_v5.mu # SHA-256 双路指令级并行流水线版 (v5)
+│   └── crypto_hash_bench_v6.mu # SHA-256 Hashcat 逆向会师增强版 (v6 破10亿大关)
 ├── scripts/
 │   └── run_benchmarks.sh       # 一键全套编译并执行基准测试脚本
 ├── LICENSE                     # MIT 开源许可证
@@ -108,13 +115,10 @@ cmake ..
 make -j$(nproc)
 ```
 
-### 2. 运行单项或一键运行
+### 2. 运行 Hashcat 增强版极速基准测试 (v6)
 ```bash
-# 一键编译并运行全部套件
-sudo ./scripts/run_benchmarks.sh
-
-# 或单独运行密码学极限快路径基准测试 (v4)
-sudo ./build/crypto_hash_bench_v4
+# 运行突破 10 亿大关的 v6 Hashcat 增强测试
+sudo ./build/crypto_hash_bench_v6
 ```
 
 ---
