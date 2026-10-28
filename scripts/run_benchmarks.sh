@@ -19,28 +19,32 @@ cmake ..
 make -j$(nproc)
 
 echo ""
-echo "[1/6] Running Memory Bandwidth Benchmark..."
+echo "[1/7] Running Memory Bandwidth Benchmark..."
 ./bandwidth_bench
 
 echo ""
-echo "[2/6] Running FP32 Compute FLOPS Benchmark (v1)..."
+echo "[2/7] Running FP32 Compute FLOPS Benchmark (v1)..."
 ./compute_flops_bench
 
 echo ""
-echo "[3/6] Running FP32 Compute FLOPS Benchmark (v2 High-Density)..."
+echo "[3/7] Running FP32 Compute FLOPS Benchmark (v2 High-Density)..."
 ./compute_flops_bench_v2
 
 echo ""
-echo "[4/6] Running SHA-256 Crypto Benchmark (v1 Baseline)..."
+echo "[4/7] Running SHA-256 Crypto Benchmark (v1 Baseline)..."
 ./crypto_hash_bench
 
 echo ""
-echo "[5/6] Running SHA-256 Crypto Benchmark (v2 Circular Register)..."
+echo "[5/7] Running SHA-256 Crypto Benchmark (v2 Circular Register)..."
 ./crypto_hash_bench_v2
 
 echo ""
-echo "[6/6] Running SHA-256 Password Fast-Path Benchmark (v4 Constant Folding)..."
+echo "[6/7] Running SHA-256 Password Fast-Path Benchmark (v4 Constant Folding)..."
 ./crypto_hash_bench_v4
+
+echo ""
+echo "[7/7] Running SHA-256 Hashcat-Enhanced Benchmark (v6 MITM Reverse Abort - 1066 MH/s)..."
+./crypto_hash_bench_v6
 
 echo ""
 echo "==============================================================="
